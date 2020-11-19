@@ -1,4 +1,51 @@
 # Cms-detector
+This is a multi-threaded CMS detector PHP CLI script forked and modified from [HERE](https://github.com/Damian972/cms-detector). It will detect 320+ CMS based on HTTP headers, meta tags, and HTML content. 
+
+## Added features
+* SSL verification is now ignored.
+* can specify output directory.
+* by default it won't follow redirects, added allow redirect flag.
+* added default user-agent, can specify custom user-agent header.
+* added custom header option, can specify a custom header.
+* case-insensitive match, fixed typo.
+
+## Usage
+
+```sh
+Usage:
+
+	-f  Input file (ex: my_file.txt)
+	-l  List of cms by id (ex: 0,1,2...)
+	--ignore List cms id to blacklist (ex: 0,1,2...)
+	--no-color  Console output without coloration
+	--threads  Total of connection asynchronous (by default 10, maximum 100)
+	--timeout  Time to wait before connection close for no response in seconds (default: 10)
+	--with-unknown-results  Write the unknown result in unknown.txt file
+	--outdir  Output Folder to save the .txt files in. (default: results/)
+	--redirect  enable redirect and detect cms for the redirected URL instead (default: false)
+	--user-agent  Set custom user-agent (default: Chrome/86.0.4240.198)
+	--header  Add a Custom header (ex: "X-Bug-Bounty: YourName")
+```
+
+Example:
+```
+php cms-detector.php -f httpx.txt --threads=50 --with-unknown-results --outdir cms-results --redirect
+```
+## Installation
+
+```sh
+sudo apt install -y php-cli php-curl php-dom
+curl -sS https://getcomposer.org/installer -o composer-setup.php
+sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer -q
+/usr/local/bin/composer require stefangabos/Zebra_cURL -q
+```
+
+---
+Credits to original author @Damian972 for the initial script.
+
+# Original Readme
+---
+# Cms-detector
 
 ## CMS supported (320+):
 ```YAML

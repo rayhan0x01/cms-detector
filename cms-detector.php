@@ -14,7 +14,6 @@
     require('vendor/autoload.php');
 	
 	define('ROOT', __DIR__);
-    define('RESULTS_FOLDER', ROOT.DIRECTORY_SEPARATOR.'results'.DIRECTORY_SEPARATOR);
 
     $cms_list[0] = [
 		'name' => 'Wordpress',
@@ -32,7 +31,10 @@
 		
 	$cms_list[2] = [
 		'name' => 'Joomla',
-		'header' => array(['x-generator', 'joomla', 'is_regex' => false], ['x-content-encoded-by', 'joomla', 'is_regex' => false]),
+		'header' => array(
+			['x-generator', 'joomla', 'is_regex' => false], 
+			['x-content-encoded-by', 'joomla', 'is_regex' => false],
+			['x-content-powered-by','joomla','is_regex' => false]),
 		'meta_tag' => array('joomla', 'is_regex' => false),
 	];
 		
@@ -1934,23 +1936,49 @@
 		'link_tag' => array('.ucoz.', 'is_regex' => false),
 		'script_tag' => array('.ucoz.net/', 'is_attribute' => true)
 	];
-	/*
-		-f  Input file (ex: my_file.txt)
-        -l  List of cms by id (ex: 0,1,2...)
-		--no-color  Console output without coloration
-		--threads  Total of connection asynchronous (by default 10, maximum 100)
-		--timeout  Time to wait before connection close for no response (in seconds)
-		--with-unknow-results  Write the unknow result in a .txt file
-	*/
-	$options = getopt('f:l:', ['no-color', 'threads:', 'ignore:', 'full-details', 'timeout:', 'with-unknow-results']);
+	$options = getopt('f:l:', ['no-color', 'threads:', 'ignore:', 'timeout:', 'with-unknown-results', 'outdir:','redirect','user-agent:','header:']);
+	if(empty($options)){
+		echo <<<EOL
+
+Usage:
+
+	-f  Input file (ex: my_file.txt)
+	-l  List of cms by id (ex: 0,1,2...)
+	--ignore List cms id to blacklist (ex: 0,1,2...)
+	--no-color  Console output without coloration
+	--threads  Total of connection asynchronous (by default 10, maximum 100)
+	--timeout  Time to wait before connection close for no response in seconds (default: 10)
+	--with-unknown-results  Write the unknown result in a .txt file
+	--outdir  Output Folder to save the .txt files in. (default: results/)
+	--redirect  enable redirect and detect cms for the redirected URL instead (default: false)
+	--user-agent  Set custom user-agent (default: Chrome/86.0.4240.198)
+	--header  Add a Custom header (ex: "X-Bug-Bounty: YourName")
+
+
+EOL;
+	exit;
+	}
 	$config = array(
-        'input_file' => !empty($options['f']) ? $options['f'] : 'list.txt',
+		'input_file' => !empty($options['f']) ? $options['f'] : 'list.txt',
+		'outdir' => !empty($options['outdir']) ? $options['outdir'] : 'results',
+		'redirect' => isset($options['redirect']) ? true : false,
+		'ua' => !empty($options['user-agent']) ? $options['user-agent'] : 'Mozilla/5.0 (X11; CrOS x86_64 13421.99.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
+		'header' => !empty($options['header']) ? $options['header'] : false,
+		'ignore_list' => isset($options['ignore']) ? explode(',', $options['ignore']) : [],
 		'cms_list' => isset($options['l']) ? explode(',', $options['l']) : [],
 		'no-color' => isset($options['no-color']) ? false : true,
         'threads' => !empty($options['threads']) && (int) $options['threads'] ? intval($options['threads']) > 100 ? 100 : intval($options['threads']) : 10,
-        'timeout' => !empty($options['timeout']) && (int) $options['timeout'] ? intval($options['timeout']) : 20,
-		'write_unknown_result' => isset($options['with-unknow-results']) ? true : false
+        'timeout' => !empty($options['timeout']) && (int) $options['timeout'] ? intval($options['timeout']) : 10,
+		'write_unknown_result' => isset($options['with-unknown-results']) ? true : false
     );
+
+	define('RESULTS_FOLDER', ROOT.DIRECTORY_SEPARATOR.$config['outdir'].DIRECTORY_SEPARATOR);
+	$headers = [
+	    'User-Agent: '.$config['ua'],
+	];
+	if($config['header']){
+		array_push($headers, $config['header']);
+	}
 	$cms_total_loaded = 0;
 	$cms_list_id_to_load = [];
 	if (empty($config['cms_list'])){
@@ -1978,13 +2006,14 @@
 			$i = 0;
 			$curl = new Zebra_cURL();
 			$curl->threads = $config['threads'] > 100 ? 100 : $config['threads'];
-			$curl->option(array(CURLOPT_TIMEOUT => $config['timeout']));
+			$curl->option(array(CURLOPT_TIMEOUT => $config['timeout'], CURLOPT_SSL_VERIFYHOST => false, CURLOPT_SSL_VERIFYPEER => false,CURLOPT_HTTPHEADER => $headers, CURLOPT_FOLLOWLOCATION => $config['redirect']));
 			$lineID = 0;
 			$url_to_check = array();
 			$total_lines = count_lines($config['input_file']);
 			echo setColor('Threads : '.$config['threads'], $config['no-color'] ? 'warning' : '').PHP_EOL;
 			echo setColor('Total file lines : '.$total_lines, $config['no-color'] ? 'warning' : '').PHP_EOL;
 			echo setColor('Total cms loaded : '.$cms_total_loaded, $config['no-color'] ? 'warning' : '').PHP_EOL;
+			echo setColor('Output Directory : '.$config['outdir'], $config['no-color'] ? 'warning' : '').PHP_EOL;
 			echo '--------------------------------------------------------------------------------'.PHP_EOL;
 			while (($uri = fgets($handle)) !== false){
 				if (!empty($uri)){
@@ -2005,7 +2034,7 @@
 		unset($curl); 
 	}  
 	
-	function check(object $request, array $cms_list, array $cms_list_id_to_load, bool $allow_unknow_result, bool $with_color){
+	function check(object $request, array $cms_list, array $cms_list_id_to_load, bool $allow_unknown_result, bool $with_color){
 		if ($request->response[1] == CURLE_OK){
             if ($request->info['http_code'] < 400){
                 $total_cms = count($cms_list);
@@ -2024,7 +2053,7 @@
 											return;
 										}
 									}else{
-										if (strpos(__($header_array[$header[0]]), $header[1]) !== false){
+										if (stripos(__($header_array[$header[0]]), $header[1]) !== false){
 											write2File(RESULTS_FOLDER.__($cms_list[$_i]['name']).'.txt', $request->info['original_url']);
 											echo setColor($cms_list[$_i]['name'].' ('.$_i.'): '.$request->info['original_url'], $with_color ? 'success' : '').PHP_EOL;
 											# $options['full-details'] ? : 
@@ -2061,7 +2090,7 @@
                                         return;
                                     }
                                 }else{
-                                    if (strpos(__($meta_tags[$meta_tags_name[$i]]->item(0)->getAttribute('content')), $cms_list[$_i]['meta_tag'][0]) !== false){
+                                    if (stripos(__($meta_tags[$meta_tags_name[$i]]->item(0)->getAttribute('content')), $cms_list[$_i]['meta_tag'][0]) !== false){
                                         write2File(RESULTS_FOLDER.__($cms_list[$_i]['name']).'.txt', $request->info['original_url']);
 										echo setColor($cms_list[$_i]['name'].' ('.$_i.'): '.$request->info['original_url'], $with_color ? 'success' : '').PHP_EOL;
                                         return;
@@ -2086,7 +2115,7 @@
                                         return;
                                     }
                                 }else{
-									if (strpos(__($link_tags->item($_i)->nodeValue), $cms_list[$i]['link_tag'][0]) !== false){
+									if (stripos(__($link_tags->item($_i)->nodeValue), $cms_list[$i]['link_tag'][0]) !== false){
                                         write2File(RESULTS_FOLDER.__($cms_list[$i]['name']).'.txt', $request->info['original_url']);
 										echo setColor($cms_list[$i]['name'].' ('.$i.'): '.$request->info['original_url'], $with_color ? 'success' : '').PHP_EOL;
                                         return;
@@ -2103,7 +2132,7 @@
                     for ($i = 0; $i < $total_cms; $i++){
                         if ($cms_list_id_to_load[$i] && !empty($cms_list[$i]['img_tag'])){
                             for ($_i = 0; $_i < $total_items; $_i++){
-                                if (strpos(__($img_tags->item($_i)->getAttribute('src')), $cms_list[$i]['img_tag']) !== false){
+                                if (stripos(__($img_tags->item($_i)->getAttribute('src')), $cms_list[$i]['img_tag']) !== false){
                                     write2File(RESULTS_FOLDER.__($cms_list[$i]['name']).'.txt', $request->info['original_url']);
                                     echo setColor($cms_list[$i]['name'].' ('.$i.'): '.$request->info['original_url'], $with_color ? 'success' : '').PHP_EOL;
                                     return;
@@ -2120,7 +2149,7 @@
                         if($cms_list_id_to_load[$i] && !empty($cms_list[$i]['script_tag'][0])){
                             for($_i = 0; $_i < $total_items; $_i++){
                                 if($cms_list[$i]['script_tag']['is_attribute'] ? !empty($script_tags->item($_i)->getAttribute('src')) && 
-                                    strpos(__($script_tags->item($_i)->getAttribute('src')), $cms_list[$i]['script_tag'][0]) !== false : strpos($script_tags->item($_i)->nodeValue, $cms_list[$i]['script_tag'][0]) !== false){
+                                    stripos(__($script_tags->item($_i)->getAttribute('src')), $cms_list[$i]['script_tag'][0]) !== false : stripos($script_tags->item($_i)->nodeValue, $cms_list[$i]['script_tag'][0]) !== false){
                                         write2File(RESULTS_FOLDER.__($cms_list[$i]['name']).'.txt', $request->info['original_url']);
 										echo setColor($cms_list[$i]['name'].' ('.$i.'): '.$request->info['original_url'], $with_color ? 'success' : '').PHP_EOL;
                                         return;
@@ -2140,7 +2169,7 @@
 								return;
 							}
 						}else{
-							if (strpos($request->body, $cms_list[$i]['body_tag'][0]) !== false){
+							if (stripos($request->body, $cms_list[$i]['body_tag'][0]) !== false){
 								write2File(RESULTS_FOLDER.__($cms_list[$i]['name']).'.txt', $request->info['original_url']);
 								echo setColor($cms_list[$i]['name'].' ('.$i.'): '.$request->info['original_url'], $with_color ? 'success' : '').PHP_EOL;
 								return;
@@ -2148,7 +2177,10 @@
 						}
 					}
 				}
-				if ($allow_unknow_result) write2File(RESULTS_FOLDER.'unknow.txt', $request->info['original_url']);
+				if ($allow_unknown_result) {
+					write2File(RESULTS_FOLDER.'unknown.txt', $request->info['original_url']);
+					echo setColor(' Unknown : '.$request->info['original_url'], $with_color ? 'warning' : '').PHP_EOL;
+				}
 			}
 		}else{ 
 			echo setColor('Bad request : '.$request->info['original_url'], $with_color ? 'danger' : '').PHP_EOL;
